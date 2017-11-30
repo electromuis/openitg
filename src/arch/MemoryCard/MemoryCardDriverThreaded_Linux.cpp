@@ -3,6 +3,8 @@
 #include "RageLog.h"
 #include "RageUtil.h"
 #include "RageFile.h"
+#include "PlayerNumber.h"
+#include "MemoryCardManager.h"
 
 #include <cerrno>
 #include <fcntl.h>
@@ -98,6 +100,20 @@ bool MemoryCardDriverThreaded_Linux::USBStorageDevicesChanged()
 			continue; // XXX warn
 
 		sThisDevices += ssprintf( "%i,", (int) buf.st_ino );
+	}
+
+	FOREACH_PlayerNumber( p )
+	{
+		CString sMountPoint = "" + MEMCARDMAN->m_sMemoryCardOsMountPoint[p].Get();
+		if(sMountPoint.length() > 0) {
+			struct stat buf;
+			int result;
+
+			result = lstat(sMountPoint, &buf);
+			if(result == 0 && (buf.st_mode & S_IFMT) == S_IFLNK) {
+				sThisDevices += sMountPoint;
+			}
+		}
 	}
 
 	bool bChanged = sThisDevices != m_sLastDevices;
@@ -322,6 +338,27 @@ void MemoryCardDriverThreaded_Linux::GetUSBStorageDevices( vector<UsbStorageDevi
 			}
 		}
 	}
+
+	FOREACH_PlayerNumber( p )
+	{
+		CString sMountPoint = "" + MEMCARDMAN->m_sMemoryCardOsMountPoint[p].Get();
+		if(sMountPoint.length() > 0) {
+			struct stat buf;
+			int result;
+
+			result = lstat(sMountPoint, &buf);
+			if(result == 0 && (buf.st_mode & S_IFMT) == S_IFLNK) {
+
+				UsbStorageDevice usbd;
+
+				usbd.sOsMountDir = sMountPoint;
+				usbd.sDevice = sMountPoint;
+				usbd.sName = "OSMOUNT";
+
+				vDevicesOut.push_back(usbd);
+			}
+		}
+	}
 	
 	/* Remove any devices that we couldn't find a mountpoint for. */
 	for( unsigned i=0; i<vDevicesOut.size(); i++ )
@@ -360,6 +397,10 @@ void MemoryCardDriverThreaded_Linux::GetUSBStorageDevices( vector<UsbStorageDevi
 
 bool MemoryCardDriverThreaded_Linux::Mount( UsbStorageDevice* pDevice )
 {
+	if(pDevice->sName == "OSMOUNT") {
+		return true;
+	}
+
 	ASSERT( !pDevice->sDevice.empty() );
 	
 	CString sCommand;
@@ -374,6 +415,10 @@ bool MemoryCardDriverThreaded_Linux::Mount( UsbStorageDevice* pDevice )
 
 void MemoryCardDriverThreaded_Linux::Unmount( UsbStorageDevice* pDevice )
 {
+	if(pDevice->sName == "OSMOUNT") {
+		return;
+	}
+
 	if( pDevice->sDevice.empty() )
 		return;
 
